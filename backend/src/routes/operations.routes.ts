@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/authenticate.js';
+import { roles } from '../middleware/authorize.js';
+import * as controller from '../controllers/operations.controller.js';
+export const operationsRoutes = Router();
+operationsRoutes.use(authenticate, roles('STORE_MANAGER', 'ADMIN'));
+operationsRoutes.get('/inventory', controller.getInventory);
+operationsRoutes.post('/replenishment', controller.createReplenishment);
+operationsRoutes.patch('/replenishment/:id', controller.updateReplenishment);
+operationsRoutes.get('/audit', controller.listAudit);
+operationsRoutes.get('/users', roles('ADMIN'), controller.listUsers);
+operationsRoutes.get('/locations', roles('ADMIN'), controller.listLocations);
+operationsRoutes.patch('/users/:id', roles('ADMIN'), controller.updateUser);

@@ -1,0 +1,11 @@
+node_modules
+**/dist
+**/.env
+**/.env.*
+**/uploads
+**/src/generated
+test-results
+deliverables
+*.docx
+**/tests
+**/*.log

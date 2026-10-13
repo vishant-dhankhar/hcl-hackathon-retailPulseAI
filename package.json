@@ -1,0 +1,25 @@
+{
+  "name": "retailpulse-ai",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n API,WEB,WORKER -c cyan,magenta,yellow \"npm run dev -w backend\" \"npm run dev -w frontend\" \"npm run worker -w backend\"",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "check": "npm run check -w backend && npm run check -w frontend",
+    "test": "npm run test -w backend",
+    "db:generate": "npm run db:generate -w backend",
+    "db:deploy": "npm run db:deploy -w backend",
+    "db:seed": "npm run db:seed -w backend",
+    "format": "prettier --write \"frontend/src/**/*.{ts,tsx,css}\" \"backend/src/**/*.ts\" \"backend/prisma/seed.ts\" \"backend/tests/*.ts\" --ignore-path .gitignore"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.9"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

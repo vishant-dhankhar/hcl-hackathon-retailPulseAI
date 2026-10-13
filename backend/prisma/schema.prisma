@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  importFileExtension = "js"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  CUSTOMER
+  STORE_MANAGER
+  ADMIN
+}
+enum Tier {
+  STANDARD
+  SILVER
+  GOLD
+  PLATINUM
+}
+enum Fulfillment {
+  PICKUP
+  DELIVERY
+}
+enum OrderStatus {
+  PLACED
+  READY_FOR_PICKUP
+  COLLECTED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+enum DocumentStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+enum ActionStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  RECEIVED
+}
+/// Access role controls permissions; membership tier controls demo benefits and policy eligibility.
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role @default(CUSTOMER)
+  tier Tier @default(STANDARD)
+  active Boolean @default(true)
+  preferences Json @default("{}")
+  createdAt DateTime @default(now())
+  sessions AuthSession[]
+  assignments StoreAssignment[]
+  cart CartItem[]
+  orders Order[]
+  tickets SupportTicket[]
+  supportReplies TicketReply[]
+}
+/// JWTs reference revocable server-side sessions so account changes take effect immediately.
+model AuthSession {
+  id String @id @default(uuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  tokens RefreshToken[]
+  createdAt DateTime @default(now())
+  @@index([userId])
+}
+/// Only a hash is stored. Consumed hashes detect reuse after token rotation.
+model RefreshToken {
+  id String @id @default(uuid())
+  hash String @unique
+  sessionId String
+  session AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  consumed Boolean @default(false)
+  expiresAt DateTime
+}
+/// Physical stores and warehouses share one location model with separate fulfillment behavior.
+model Location {
+  id String @id @default(uuid())
+  name String
+  city String
+  address String
+  warehouse Boolean @default(false)
+  expressAvailable Boolean @default(true)
+  assignments StoreAssignment[]
+  inventory Inventory[]
+  orders Order[]
+  proposals Replenishment[]
+  tickets SupportTicket[]
+}
+/// Composite key prevents duplicate manager-to-location assignments.
+model StoreAssignment {
+  userId String
+  locationId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@id([userId, locationId])
+}
+/// Catalogue attributes are separate from per-location inventory; prices use exact decimals.
+model Product {
+  id String @id @default(uuid())
+  sku String @unique
+  name String
+  category String
+  brand String
+  description String
+  price Decimal @db.Decimal(12, 2)
+  originalPrice Decimal? @db.Decimal(12, 2)
+  rating Decimal @db.Decimal(2, 1)
+  color String @default("sage")
+  specifications Json
+  active Boolean @default(true)
+  featured Boolean @default(false)
+  inventory Inventory[]
+  cart CartItem[]
+  orderItems OrderItem[]
+  proposals Replenishment[]
+  @@index([category, active])
+  @@index([brand])
+}
+/// One product/location record. SQL migration additionally prevents negative quantities.
+model Inventory {
+  id String @id @default(uuid())
+  productId String
+  locationId String
+  product Product @relation(fields: [productId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+  quantity Int @default(0)
+  reorderPoint Int @default(5)
+  targetStock Int @default(20)
+  updatedAt DateTime @updatedAt
+  @@unique([productId, locationId])
+  @@index([locationId])
+}
+/// Carts express intent and do not reserve stock. Checkout validates availability again.
+model CartItem {
+  id String @id @default(uuid())
+  userId String
+  productId String
+  quantity Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+  @@unique([userId, productId])
+}
+/// An idempotency key identifies one customer checkout; retries return the same order.
+model Order {
+  id String @id @default(uuid())
+  number String @unique
+  userId String
+  locationId String
+  user User @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+  fulfillment Fulfillment
+  status OrderStatus @default(PLACED)
+  subtotal Decimal @db.Decimal(12, 2)
+  deliveryCharge Decimal @db.Decimal(12, 2)
+  total Decimal @db.Decimal(12, 2)
+  address String?
+  simulatedPayment Boolean @default(true)
+  idempotencyKey String
+  requestHash String
+  items OrderItem[]
+  tickets SupportTicket[]
+  createdAt DateTime @default(now())
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([locationId, status])
+}
+/// Name and unit price are snapshots that preserve historical order information.
+model OrderItem {
+  id String @id @default(uuid())
+  orderId String
+  productId String
+  name String
+  quantity Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+/// Tier-derived priority is stored with the support request for a transparent demo.
+model SupportTicket {
+  id String @id @default(uuid())
+  userId String
+  locationId String?
+  orderId String?
+  user User @relation(fields: [userId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+  subject String
+  description String
+  priority String
+  status String @default("OPEN")
+  createdAt DateTime @default(now())
+  replies TicketReply[]
+  @@index([locationId, status])
+  @@index([userId, createdAt])
+  @@index([orderId])
+}
+/// Customer-visible staff answers retain the author's role at the time of the reply.
+model TicketReply {
+  id String @id @default(uuid())
+  ticketId String
+  authorId String
+  authorRole Role
+  body String
+  createdAt DateTime @default(now())
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+  @@index([ticketId, createdAt])
+}
+/// Proposed operational changes require staff approval and explicit receipt before affecting stock.
+model Replenishment {
+  id String @id @default(uuid())
+  productId String
+  locationId String
+  product Product @relation(fields: [productId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+  quantity Int
+  reason String
+  status ActionStatus @default(PROPOSED)
+  requestedBy String
+  approvedBy String?
+  createdAt DateTime @default(now())
+  @@index([locationId, status])
+}
+/// Applicability, publication and ingestion metadata gate evidence before retrieval.
+model KnowledgeDocument {
+  id String @id @default(uuid())
+  title String
+  version String
+  country String @default("IN")
+  category String @default("ALL")
+  documentType String @default("POLICY")
+  tiers Tier[]
+  audience Role[]
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  active Boolean @default(false)
+  status DocumentStatus @default(QUEUED)
+  filePath String?
+  originalFile Bytes?
+  fileName String?
+  error String?
+  leaseUntil DateTime?
+  attempts Int @default(0)
+  embeddingModel String?
+  retrievalMode String @default("LEXICAL")
+  chunks DocumentChunk[]
+  createdAt DateTime @default(now())
+  @@unique([title, version, country, category])
+  @@index([active, country])
+}
+/// Native pgvector column is accessed through parameterized SQL because Prisma lacks a vector scalar.
+model DocumentChunk {
+  id String @id @default(uuid())
+  documentId String
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  section String
+  content String
+  embedding Unsupported("vector(1536)")?
+  @@index([documentId])
+}
+/// Text actor/resource IDs retain traceability independently of cascading business relations.
+model AuditLog {
+  id String @id @default(uuid())
+  actorId String
+  action String
+  resourceId String
+  details Json
+  createdAt DateTime @default(now())
+  @@index([actorId, createdAt])
+}
